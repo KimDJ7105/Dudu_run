@@ -61,8 +61,8 @@ function initClouds() {
   }
 }
 
-function updateClouds() {
-  const cloudSpeed = state.gameSpeed * CLOUD_SPEED_SCALE;
+function updateClouds(deltaFactor) {
+  const cloudSpeed = state.gameSpeed * CLOUD_SPEED_SCALE * deltaFactor;
   for (let i = 0; i < clouds.length; i++) {
     clouds[i].x -= cloudSpeed;
     // 화면 왼쪽으로 사라지면 오른쪽 바깥에서 다시 등장시킨다
@@ -170,18 +170,19 @@ const dudu = {
   jumpHoldFrames: 0,   // 홀드 중력 완화가 적용된 프레임 수 (MAX_JUMP_HOLD_FRAMES까지)
   isDucking: false,    // 숙이기 상태인지 (공중 장애물 회피용, 점프 중에는 불가능)
 
-  // 매 프레임 두두의 위치/속도를 갱신하는 물리 로직
-  update() {
+  // 매 프레임 두두의 위치/속도를 갱신하는 물리 로직.
+  // deltaFactor: 이번 틱이 "60fps 기준 몇 프레임 분량의 시간"인지 (1 = 정상 프레임 한 번).
+  update(deltaFactor) {
     if (this.isJumping) {
       // 버튼을 누르고 있고, 아직 상승 중이고, 홀드 허용 시간이 남아있으면 중력을 약하게 적용
       // -> 길게 누를수록 상승이 오래 유지되어 더 높이 올라간다.
       const isSustainingJump =
         this.isJumpHeld && this.velocityY < 0 && this.jumpHoldFrames < MAX_JUMP_HOLD_FRAMES;
 
-      this.velocityY += isSustainingJump ? GRAVITY * JUMP_HOLD_GRAVITY_SCALE : GRAVITY;
-      if (isSustainingJump) this.jumpHoldFrames += 1;
+      this.velocityY += (isSustainingJump ? GRAVITY * JUMP_HOLD_GRAVITY_SCALE : GRAVITY) * deltaFactor;
+      if (isSustainingJump) this.jumpHoldFrames += deltaFactor;
 
-      this.y += this.velocityY;
+      this.y += this.velocityY * deltaFactor;
 
       // 바닥에 닿으면 점프 종료, 바닥 위치로 보정
       if (this.y >= GROUND_Y - this.height) {
@@ -273,13 +274,14 @@ function spawnObstacle() {
 }
 
 // 장애물들의 위치를 갱신하고, 화면 밖으로 나간 것은 제거
-function updateObstacles() {
+function updateObstacles(deltaFactor) {
   if (frameCount >= nextObstacleFrame) {
     spawnObstacle();
   }
 
+  const moveAmount = state.gameSpeed * deltaFactor;
   obstacles.forEach((obstacle) => {
-    obstacle.x -= state.gameSpeed;
+    obstacle.x -= moveAmount;
   });
 
   // 왼쪽으로 완전히 빠져나간 장애물은 배열에서 제거 (메모리/연산 누적 방지)
@@ -480,16 +482,22 @@ function playGameOverSound() {
 }
 
 // ====== 점수 ======
-// 매 프레임 조금씩 점수를 올리고, 일정 점수마다 게임 속도를 높여 난이도를 조절
-function updateScore() {
-  state.score += 1;
+// 매 프레임 조금씩 점수를 올리고, 일정 점수마다 게임 속도를 높여 난이도를 조절.
+// deltaFactor 때문에 점수가 정수가 아니라 소수 단위로 올라갈 수 있어서, "정확히 나누어떨어지는지"
+// (% === 0) 대신 "이번 프레임에 그 경계를 넘었는지"로 판정한다 (넘는 순간 한 번만 실행됨).
+function updateScore(deltaFactor) {
+  const previousScore = state.score;
+  state.score += deltaFactor;
 
-  if (state.score % SCORE_SOUND_INTERVAL === 0) {
+  if (Math.floor(state.score / SCORE_SOUND_INTERVAL) > Math.floor(previousScore / SCORE_SOUND_INTERVAL)) {
     playScoreMilestoneSound();
   }
 
   // 속도는 점수가 오를 때마다 조금씩 증가하되, MAX_GAME_SPEED를 넘지 않는다 (느려지는 경우는 없음)
-  if (state.score % SPEED_INCREASE_INTERVAL === 0 && state.gameSpeed < MAX_GAME_SPEED) {
+  if (
+    Math.floor(state.score / SPEED_INCREASE_INTERVAL) > Math.floor(previousScore / SPEED_INCREASE_INTERVAL) &&
+    state.gameSpeed < MAX_GAME_SPEED
+  ) {
     state.gameSpeed = Math.min(MAX_GAME_SPEED, state.gameSpeed + SPEED_INCREASE_AMOUNT);
   }
 }
@@ -551,13 +559,13 @@ function endGame() {
 }
 
 // 충돌 순간의 피드백: 화면 전체에 붉은 틴트를 깔았다가 몇 프레임에 걸쳐 서서히 사라지게 한다.
-function drawGameOverFlash() {
+function drawGameOverFlash(deltaFactor) {
   if (gameOverFlashFrames <= 0) return;
 
   const alpha = (gameOverFlashFrames / GAME_OVER_FLASH_DURATION) * 0.35;
   ctx.fillStyle = `rgba(220, 0, 0, ${alpha})`;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  gameOverFlashFrames -= 1;
+  gameOverFlashFrames -= deltaFactor;
 }
 
 function drawMessage(text) {
@@ -631,19 +639,32 @@ duckButtonEl.addEventListener('pointerup', () => dudu.stopDuck());
 duckButtonEl.addEventListener('pointercancel', () => dudu.stopDuck());
 
 // ====== 메인 게임 루프 ======
+// requestAnimationFrame은 "한 번 호출 = 정확히 1/60초"를 보장하지 않는다. 특히 모바일에서는
+// 화면 주소창이 접히고 펴지는 등의 이유로 호출 간격이 불규칙해지는 경우가 있는데, 예전처럼
+// "호출될 때마다 무조건 +1프레임"으로 계산하면 호출이 몰리는 순간 게임이 갑자기 빨라져 보인다.
+// 그래서 실제 경과 시간을 재서 "60fps 기준 몇 프레임 분량의 시간이 지났는지(deltaFactor)"를
+// 구하고, 모든 이동/점수/타이머가 프레임 횟수가 아니라 이 값을 기준으로 진행되게 한다.
+const TARGET_FRAME_MS = 1000 / 60;
+const MAX_DELTA_FACTOR = 3; // 탭 전환 등으로 오래 멈췄다 돌아와도 한 번에 너무 많이 진행되지 않도록 제한
+let lastTimestamp = null;
+
 // 매 프레임: 지우기 -> 상태 갱신 -> 다시 그리기 순으로 반복 (requestAnimationFrame)
-function gameLoop() {
+function gameLoop(timestamp) {
+  const deltaMs = lastTimestamp === null ? TARGET_FRAME_MS : timestamp - lastTimestamp;
+  lastTimestamp = timestamp;
+  const deltaFactor = Math.min(MAX_DELTA_FACTOR, Math.max(0, deltaMs / TARGET_FRAME_MS));
+
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   drawClouds();
   drawGround();
 
   if (state.status === 'running') {
-    frameCount += 1;
-    dudu.update();
-    updateObstacles();
-    updateClouds();
-    updateScore();
+    frameCount += deltaFactor;
+    dudu.update(deltaFactor);
+    updateObstacles(deltaFactor);
+    updateClouds(deltaFactor);
+    updateScore(deltaFactor);
 
     if (checkCollisions()) {
       endGame();
@@ -662,11 +683,11 @@ function gameLoop() {
     drawMessage('게임 오버! 다시 시작하려면 스페이스바');
   }
 
-  drawGameOverFlash();
+  drawGameOverFlash(deltaFactor);
 
   requestAnimationFrame(gameLoop);
 }
 
 pickRandomDuduSprite(); // 시작 화면에서도 두두가 보이도록 미리 하나 선택
 initClouds();
-gameLoop();
+requestAnimationFrame(gameLoop); // 첫 호출부터 timestamp를 받아야 하므로 직접 호출 대신 rAF로 시작

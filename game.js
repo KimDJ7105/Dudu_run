@@ -129,14 +129,21 @@ const DUCK_HEIGHT = 45;     // 숙였을 때 두두의 높이 (낮을수록 숙�
 const HITBOX_FRONT_X = 130; // 히트박스 앞쪽 끝 x좌표 (이 값은 그대로 유지)
 const HITBOX_WIDTH = 40;    // 기존 70에서 줄임 (꼬리 쪽을 잘라낸 너비)
 
-// 공중 장애물(원본의 '새'와 같은 역할). 서 있으면 맞고, 숙이면 피할 수 있는 높이에 배치한다.
+// 공중 장애물(새). 서 있으면 맞고, 숙이면 피할 수 있는 높이에 배치한다.
 // (STANDING 상태 두두의 머리보다 낮고, DUCK 상태 두두의 머리보다는 높아야 "숙여야만 피할 수 있는" 장애물이 된다)
 const FLYING_OBSTACLE_HEIGHT = 35;
+const FLYING_OBSTACLE_WIDTH = 54; // 새 이미지 원본 비율(31:20)에 맞춘 너비
 const FLYING_OBSTACLE_Y = GROUND_Y - 95;
 const FLYING_OBSTACLE_MIN_SCORE = 300; // 이 점수를 넘기 전에는 등장하지 않음 (초반 난이도 완화)
 const FLYING_OBSTACLE_CHANCE = 0.35;   // 등장 조건을 만족했을 때 공중 장애물이 뽑힐 확률
-// 빨/파/초 중 랜덤으로 색을 고른다. "r,g,b" 형태로 둬서 꼬리를 그릴 때 투명도만 다르게 섞어 쓸 수 있게 함.
-const STAR_COLORS = ['229,57,53', '30,136,229', '67,160,71'];
+
+// 새 날갯짓 2프레임 이미지. 캔버스에 drawImage로 직접 그릴 수 있는 정적 PNG라
+// (GIF와 달리) 별도 DOM 오버레이 없이 바로 사용할 수 있다.
+const birdWingUpImage = new Image();
+birdWingUpImage.src = 'resource/sprite/bird/bird_wing_up.png';
+const birdWingDownImage = new Image();
+birdWingDownImage.src = 'resource/sprite/bird/bird_wing_down.png';
+const WING_FLAP_INTERVAL_FRAMES = 10; // 이 프레임 수마다 날개 위/아래 프레임을 번갈아 보여줌
 
 // 게임 전체 상태를 하나의 객체로 관리 (ready -> running -> gameover)
 const state = {
@@ -251,9 +258,8 @@ function spawnObstacle() {
       type: 'flying',
       x: canvas.width,
       y: FLYING_OBSTACLE_Y,
-      width: FLYING_OBSTACLE_HEIGHT, // 별 모양이 정사각형에 가깝게 보이도록 너비=높이로 맞춤
+      width: FLYING_OBSTACLE_WIDTH,
       height: FLYING_OBSTACLE_HEIGHT,
-      color: STAR_COLORS[Math.floor(Math.random() * STAR_COLORS.length)],
     });
   } else {
     const height = 40 + Math.random() * 40; // 40~80 랜덤 높이
@@ -316,61 +322,22 @@ function drawCactus({ x, y, width, height }) {
   );
 }
 
-// 숙여서 피하는 장애물: 빨/파/초 중 하나의 색으로 그려지는 5각 별.
-// 가만히 날아오면 밋밋해서, 제자리 회전 + 위아래로 살짝 둥실거리는 움직임을 더했다.
-// (x좌표를 위상값으로 섞어써서 화면에 여러 개가 떠 있어도 서로 다른 타이밍으로 움직인다)
-function drawStar({ x, y, width, height, color }) {
-  const bob = Math.sin((frameCount + x) * 0.1) * 4; // 위아래로 둥실거리는 효과 (시각 전용, 히트박스는 그대로)
-  const rotation = (frameCount + x) * 0.015; // 제자리 회전 (표창처럼 보이지 않도록 천천히)
+// 숙여서 피하는 장애물: 날갯짓하는 새(이미지 2프레임을 번갈아 그림).
+// frameCount(델타타임 기준으로 흐르는 "프레임 시간")를 WING_FLAP_INTERVAL_FRAMES로 나눠서
+// 일정 주기로 두 프레임을 번갈아 보여준다. 회전/둥실거림/꼬리 같은 연출은 넣지 않고 담백하게 그린다.
+function drawBird({ x, y, width, height }) {
+  const isWingUp = Math.floor(frameCount / WING_FLAP_INTERVAL_FRAMES) % 2 === 0;
+  const image = isWingUp ? birdWingUpImage : birdWingDownImage;
 
-  const cx = x + width / 2;
-  const cy = y + height / 2 + bob;
-  const outerRadius = Math.min(width, height) / 2;
-  const innerRadius = outerRadius * 0.5;
-  const spikes = 5;
-  const step = Math.PI / spikes;
-
-  // 유성 꼬리: 장애물은 항상 왼쪽으로 움직이므로, 꼬리는 그 반대인 오른쪽으로 갈수록
-  // 가늘어지고 투명해지게 그린다. 별 자체의 회전(rotation)과는 무관하게 고정된 방향.
-  const tailLength = outerRadius * 4;
-  const tailHalfWidth = outerRadius * 0.6;
-  const tailGradient = ctx.createLinearGradient(cx, cy, cx + tailLength, cy);
-  tailGradient.addColorStop(0, `rgba(${color}, 0.6)`);
-  tailGradient.addColorStop(1, `rgba(${color}, 0)`);
-
-  ctx.fillStyle = tailGradient;
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - tailHalfWidth);
-  ctx.lineTo(cx + tailLength, cy);
-  ctx.lineTo(cx, cy + tailHalfWidth);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(rotation);
-
-  let angle = -Math.PI / 2; // 꼭짓점이 위를 보도록 시작 각도 설정
-  ctx.fillStyle = `rgb(${color})`;
-  ctx.beginPath();
-  ctx.moveTo(Math.cos(angle) * outerRadius, Math.sin(angle) * outerRadius);
-
-  for (let i = 0; i < spikes; i++) {
-    angle += step;
-    ctx.lineTo(Math.cos(angle) * innerRadius, Math.sin(angle) * innerRadius);
-    angle += step;
-    ctx.lineTo(Math.cos(angle) * outerRadius, Math.sin(angle) * outerRadius);
+  if (image.complete) {
+    ctx.drawImage(image, x, y, width, height);
   }
-
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
 }
 
 function drawObstacles() {
   obstacles.forEach((obstacle) => {
     if (obstacle.type === 'flying') {
-      drawStar(obstacle);
+      drawBird(obstacle);
     } else {
       drawCactus(obstacle);
     }

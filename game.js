@@ -423,13 +423,13 @@ function checkCollisions() {
 // 완전히 평평한 직선 대신, 흙길처럼 살짝 패이거나 볼록한 지점들이 있는 선으로 그린다.
 // 매 프레임 랜덤하게 생성하면 덜덜 떨려 보이므로, 고정된 패턴 하나를 정해두고
 // 장애물과 같은 속도(gameSpeed)로 스크롤만 시킨다.
-const GROUND_BUMP_TILE_WIDTH = 150; // 이 패턴이 반복되는 한 구간의 길이
+// 타일 너비(1000)가 캔버스 너비(800)보다 넓어서, 타일 하나에 요철이 2개뿐이면
+// 화면에 최대 2개까지만 보이고 둘 다 안 보일 때도 생긴다 (너무 자주 나오지 않도록).
+const GROUND_BUMP_TILE_WIDTH = 1000;
 const GROUND_BUMPS_PER_TILE = [
   // offset: 타일 안에서의 x 위치, depth: 양수면 볼록(위로), 음수면 패임(아래로)
-  { offset: 20, depth: 3 },
-  { offset: 55, depth: -4 },
-  { offset: 95, depth: 2 },
-  { offset: 125, depth: -3 },
+  { offset: 300, depth: 3 },
+  { offset: 700, depth: -4 },
 ];
 let groundScrollX = 0; // 누적 스크롤 거리
 

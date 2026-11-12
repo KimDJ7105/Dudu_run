@@ -320,7 +320,8 @@ function updateObstacles(deltaFactor) {
 }
 
 // 점프로 피하는 장애물: 기둥(몸통) + 좌우 팔 두 개로 이루어진 선인장 실루엣 (회색 원톤)
-function drawCactus({ x, y, width, height }) {
+// 선인장 하나를 주어진 영역(x, y, width, height) 안에 그린다.
+function drawSingleCactus(x, y, width, height) {
   ctx.fillStyle = '#5a5a5a';
 
   const trunkWidth = width * 0.42;
@@ -345,6 +346,22 @@ function drawCactus({ x, y, width, height }) {
     x + width - armWidth - (trunkX + trunkWidth),
     connectorHeight
   );
+}
+
+// 가로 폭이 넓은 장애물(주로 3단계)은 선인장 하나를 늘려서 그리면 뚱뚱해 보이므로,
+// 판정 박스(obstacle.width/height)는 그대로 둔 채 그 안에 선인장 두 개를 나란히 붙여 그린다.
+const WIDE_CACTUS_VISUAL_THRESHOLD = 48;
+const WIDE_CACTUS_GAP = 2; // 두 선인장 사이 틈
+
+function drawCactus({ x, y, width, height }) {
+  if (width <= WIDE_CACTUS_VISUAL_THRESHOLD) {
+    drawSingleCactus(x, y, width, height);
+    return;
+  }
+
+  const halfWidth = (width - WIDE_CACTUS_GAP) / 2;
+  drawSingleCactus(x, y, halfWidth, height);
+  drawSingleCactus(x + halfWidth + WIDE_CACTUS_GAP, y, halfWidth, height);
 }
 
 // 숙여서 피하는 장애물: 날갯짓하는 새(이미지 2프레임을 번갈아 그림).

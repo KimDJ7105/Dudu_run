@@ -1,0 +1,46 @@
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  margin: 0;
+  background: #f7f7f7;
+  font-family: sans-serif;
+}
+
+#game-wrap {
+  position: relative; /* 두두 스프라이트(img)를 캔버스 좌표 기준으로 절대배치하기 위한 기준점 */
+  text-align: center;
+}
+
+#game {
+  display: block; /* 인라인 요소 기본 여백 제거 -> 캔버스 내부 좌표와 래퍼 좌표를 1:1로 맞추기 위함 */
+  background: #ffffff;
+  border: 1px solid #ccc;
+}
+
+#dudu-sprite {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: bottom center; /* 숙이기(scaleY)가 발 위치를 기준으로 눌리도록 */
+  pointer-events: none; /* 클릭/마우스 입력이 아래 캔버스로 그대로 전달되도록 */
+}
+
+/* 게임 오버 순간 캔버스+두두 이미지를 함께 짧게 흔드는 효과 */
+#game-wrap.shake {
+  animation: shake 0.4s;
+}
+
+@keyframes shake {
+  10%, 90% { transform: translateX(-4px); }
+  20%, 80% { transform: translateX(6px); }
+  30%, 50%, 70% { transform: translateX(-8px); }
+  40%, 60% { transform: translateX(8px); }
+}
+
+#hint {
+  color: #666;
+  font-size: 14px;
+}

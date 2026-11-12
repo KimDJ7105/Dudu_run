@@ -420,10 +420,38 @@ function checkCollisions() {
 }
 
 // ====== 배경(바닥선) ======
+// 완전히 평평한 직선 대신, 흙길처럼 살짝 패이거나 볼록한 지점들이 있는 선으로 그린다.
+// 매 프레임 랜덤하게 생성하면 덜덜 떨려 보이므로, 고정된 패턴 하나를 정해두고
+// 장애물과 같은 속도(gameSpeed)로 스크롤만 시킨다.
+const GROUND_BUMP_TILE_WIDTH = 150; // 이 패턴이 반복되는 한 구간의 길이
+const GROUND_BUMPS_PER_TILE = [
+  // offset: 타일 안에서의 x 위치, depth: 양수면 볼록(위로), 음수면 패임(아래로)
+  { offset: 20, depth: 3 },
+  { offset: 55, depth: -4 },
+  { offset: 95, depth: 2 },
+  { offset: 125, depth: -3 },
+];
+let groundScrollX = 0; // 누적 스크롤 거리
+
 function drawGround() {
   ctx.strokeStyle = '#999';
   ctx.beginPath();
   ctx.moveTo(0, GROUND_Y);
+
+  const scrollOffset = groundScrollX % GROUND_BUMP_TILE_WIDTH;
+  const tileCount = Math.ceil(canvas.width / GROUND_BUMP_TILE_WIDTH) + 2;
+
+  for (let tile = -1; tile < tileCount; tile++) {
+    const tileStartX = tile * GROUND_BUMP_TILE_WIDTH - scrollOffset;
+    GROUND_BUMPS_PER_TILE.forEach(({ offset, depth }) => {
+      const bumpX = tileStartX + offset;
+      if (bumpX < 0 || bumpX > canvas.width) return;
+      ctx.lineTo(bumpX - 4, GROUND_Y);
+      ctx.lineTo(bumpX, GROUND_Y - depth);
+      ctx.lineTo(bumpX + 4, GROUND_Y);
+    });
+  }
+
   ctx.lineTo(canvas.width, GROUND_Y);
   ctx.stroke();
 }
@@ -537,6 +565,7 @@ function startGame() {
   getAudioContext().resume();
   obstacles = [];
   frameCount = 0;
+  groundScrollX = 0;
   nextObstacleFrame = MIN_OBSTACLE_GAP_FRAMES;
   dudu.isDucking = false;
   dudu.height = STANDING_HEIGHT;
@@ -675,6 +704,7 @@ function gameLoop(timestamp) {
     dudu.update(deltaFactor);
     updateObstacles(deltaFactor);
     updateClouds(deltaFactor);
+    groundScrollX += state.gameSpeed * deltaFactor;
     updateScore(deltaFactor);
 
     if (checkCollisions()) {

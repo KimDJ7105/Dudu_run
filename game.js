@@ -386,8 +386,24 @@ function isColliding(rectA, rectB) {
   );
 }
 
+// 선인장(ground 타입)은 그려지는 모습보다 판정을 가로로 살짝 좁혀서 체감 난이도를 관대하게 한다.
+// 높이는 그대로 둬서(세로 판정은 안 건드림) 점프 타이밍 자체의 난이도는 바뀌지 않는다.
+const GROUND_OBSTACLE_HITBOX_WIDTH_RATIO = 0.8;
+
+function getObstacleHitbox(obstacle) {
+  if (obstacle.type !== 'ground') return obstacle;
+
+  const hitboxWidth = obstacle.width * GROUND_OBSTACLE_HITBOX_WIDTH_RATIO;
+  return {
+    x: obstacle.x + (obstacle.width - hitboxWidth) / 2,
+    y: obstacle.y,
+    width: hitboxWidth,
+    height: obstacle.height,
+  };
+}
+
 function checkCollisions() {
-  return obstacles.some((obstacle) => isColliding(dudu, obstacle));
+  return obstacles.some((obstacle) => isColliding(dudu, getObstacleHitbox(obstacle)));
 }
 
 // ====== 배경(바닥선) ======
@@ -595,6 +611,24 @@ window.addEventListener('keyup', (e) => {
     dudu.stopDuck();
   }
 });
+
+// 모바일 화면 하단 터치 버튼. pointerdown/up으로 마우스/터치를 동일하게 처리한다.
+const jumpButtonEl = document.getElementById('btn-jump');
+const duckButtonEl = document.getElementById('btn-duck');
+
+jumpButtonEl.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  handleJumpInput();
+});
+jumpButtonEl.addEventListener('pointerup', () => dudu.releaseJump());
+jumpButtonEl.addEventListener('pointercancel', () => dudu.releaseJump());
+
+duckButtonEl.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  dudu.startDuck();
+});
+duckButtonEl.addEventListener('pointerup', () => dudu.stopDuck());
+duckButtonEl.addEventListener('pointercancel', () => dudu.stopDuck());
 
 // ====== 메인 게임 루프 ======
 // 매 프레임: 지우기 -> 상태 갱신 -> 다시 그리기 순으로 반복 (requestAnimationFrame)

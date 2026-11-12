@@ -9,7 +9,11 @@
   <div id="game-wrap">
     <canvas id="game" width="800" height="320"></canvas>
     <img id="dudu-sprite" alt="">
-    <p id="hint">스페이스바 / ↑ / W : 점프 (오래 누를수록 높이) · ↓ / S : 숙이기 · 스페이스바로 시작/재시작</p>
+    <div id="mobile-controls">
+      <button id="btn-duck" aria-label="숙이기">▼</button>
+      <button id="btn-jump" aria-label="점프">▲</button>
+    </div>
+    <p id="hint">스페이스바 / ↑ / W : 점프 (오래 누를수록 높이) · ↓ / S : 숙이기 · 스페이스바로 시작/재시작 (모바일은 화면 하단 버튼 사용)</p>
   </div>
   <script src="game.js"></script>
 </body>

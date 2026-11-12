@@ -24,3 +24,4 @@
 
 - [docs/tech-stack.md](docs/tech-stack.md) - 기술 스택 선택 이유
 - [docs/game-design-decisions.md](docs/game-design-decisions.md) - 게임플레이 디자인 결정 기록
+- [docs/technical-decisions.md](docs/technical-decisions.md) - 내부 구조/엔지니어링 결정 기록

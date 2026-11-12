@@ -94,15 +94,16 @@ function drawCloud({ x, y, scale }) {
 function drawClouds() {
   clouds.forEach(drawCloud);
 }
-// 캐릭터/캔버스 크기에 맞춰 시뮬레이션으로 맞춘 값 (탭 점프 ≈ 68px, 꽉 누른 점프 ≈ 148px 상승).
-// 탭 점프는 낮거나 중간 높이 장애물만 넘기고, 높은 장애물은 꽉 눌러야만 넘을 수 있도록 차이를 크게 뒀다.
-const GRAVITY = 1.3;                 // 중력 가속도
-const JUMP_VELOCITY = -13;           // 점프 시 초기 상승 속도 (음수 = 위로)
+// 이전 값(중력 1.3)은 "천장을 안 뚫는 것"만 기준으로 방어적으로 올렸던 값이라 점프가 너무
+// 급하게 뜨고 떨어진다는 피드백이 있었다. 중력/초기 속도를 함께 낮춰서 "같은 높이라도 더 오래
+// 떠 있는" 둥둥 뜨는 느낌으로 재조정했다 (탭 점프 ≈ 83px/0.6초, 꽉 누른 점프 ≈ 156px/0.87초).
+const GRAVITY = 0.55;                // 중력 가속도
+const JUMP_VELOCITY = -9.5;          // 점프 시 초기 상승 속도 (음수 = 위로)
 
 // 점프 버튼을 누르고 있는 동안 중력을 약하게 적용해서 "길게 누르면 더 높이 뛰는" 효과를 만든다.
 // 짧게 눌렀다 떼면 금방 정상 중력으로 돌아가 낮게 뛰고, 계속 누르고 있으면 최대 시간까지 둥둥 떠서 더 높이 올라간다.
-const JUMP_HOLD_GRAVITY_SCALE = 0.3; // 홀드 중 적용할 중력 배율 (1보다 작을수록 더 둥둥 뜸)
-const MAX_JUMP_HOLD_FRAMES = 12;      // 홀드 효과가 유지되는 최대 프레임 수
+const JUMP_HOLD_GRAVITY_SCALE = 0.35; // 홀드 중 적용할 중력 배율 (1보다 작을수록 더 둥둥 뜸)
+const MAX_JUMP_HOLD_FRAMES = 15;      // 홀드 효과가 유지되는 최대 프레임 수
 
 const INITIAL_GAME_SPEED = 7;        // 초기 장애물 이동 속도
 const MAX_GAME_SPEED = 13;           // 속도는 여기까지만 올라가고 더는 빨라지지 않음 (원본처럼 계속 빨라지기만 하되 상한을 둠)
@@ -128,6 +129,18 @@ const DUCK_HEIGHT = 45;     // 숙였을 때 두두의 높이 (낮을수록 숙�
 // 몸통 쪽) 끝은 고정해두고, 뒤쪽(꼬리 쪽)만 잘라내서 몸통 부분만 판정에 쓰도록 좁혔다.
 const HITBOX_FRONT_X = 130; // 히트박스 앞쪽 끝 x좌표 (이 값은 그대로 유지)
 const HITBOX_WIDTH = 40;    // 기존 70에서 줄임 (꼬리 쪽을 잘라낸 너비)
+
+// 선인장을 난이도 3단계로 나눈다. "넘을 수 있는지"는 높이가, "타이밍이 얼마나 빡빡한지"는
+// 너비가 결정한다 — 너비가 넓을수록 장애물이 두두 밑을 지나가는 시간(통과 시간)이 길어지고,
+// 점프로 그 높이 이상 떠 있는 시간(T_high)은 정해져 있으니 통과 시간이 길어질수록 타이밍이
+// 빡빡해진다 (현재 점프 물리 기준: 높이 130px의 T_high ≈ 20프레임, 가장 느린 속도(7)에서
+// 너비 60px의 통과 시간 ≈ 14프레임으로, 약 5~6프레임의 여유를 남겨 "어렵지만 막히진 않게" 맞췄다).
+const CACTUS_TIERS = [
+  { minHeight: 40, maxHeight: 60, minWidth: 25, maxWidth: 45 },   // 1단계: 탭 점프로 여유 있게 클리어
+  { minHeight: 90, maxHeight: 110, minWidth: 30, maxWidth: 70 },  // 2단계: 홀드 점프 필요, 타이밍은 널널함
+  { minHeight: 120, maxHeight: 135, minWidth: 55, maxWidth: 70 }, // 3단계: 홀드 점프 + 타이밍을 맞춰야 함
+];
+const TALL_CACTUS_MIN_SCORE = 800; // 3단계는 이 점수를 넘긴 뒤부터만 등장 (초반 난이도 보호)
 
 // 공중 장애물(새). 서 있으면 맞고, 숙이면 피할 수 있는 높이에 배치한다.
 // (STANDING 상태 두두의 머리보다 낮고, DUCK 상태 두두의 머리보다는 높아야 "숙여야만 피할 수 있는" 장애물이 된다)
@@ -249,6 +262,17 @@ let frameCount = 0;          // 전체 경과 프레임 수 (스폰 타이밍 �
 let nextObstacleFrame = 0;   // 다음 장애물이 등장할 프레임
 
 // 새 장애물 하나를 생성해 배열에 추가. 일정 점수 이후부터는 공중 장애물(숙여서 회피)도 등장시킨다.
+// 선인장 난이도 단계를 하나 고른다. 3단계(정밀 타이밍)는 TALL_CACTUS_MIN_SCORE를 넘긴 뒤에만
+// 후보에 들어간다. 1단계가 제일 자주, 3단계가 제일 드물게 나오도록 가중치를 뒀다.
+function pickCactusTier() {
+  const canSpawnTall = state.score >= TALL_CACTUS_MIN_SCORE;
+  const roll = Math.random();
+
+  if (canSpawnTall && roll < 0.15) return CACTUS_TIERS[2];
+  if (roll < 0.15 + 0.35) return CACTUS_TIERS[1];
+  return CACTUS_TIERS[0];
+}
+
 function spawnObstacle() {
   const canSpawnFlying = state.score >= FLYING_OBSTACLE_MIN_SCORE;
   const isFlying = canSpawnFlying && Math.random() < FLYING_OBSTACLE_CHANCE;
@@ -262,8 +286,9 @@ function spawnObstacle() {
       height: FLYING_OBSTACLE_HEIGHT,
     });
   } else {
-    const height = 40 + Math.random() * 40; // 40~80 랜덤 높이
-    const width = 25 + Math.random() * 25;  // 25~50 랜덤 너비
+    const tier = pickCactusTier();
+    const height = tier.minHeight + Math.random() * (tier.maxHeight - tier.minHeight);
+    const width = tier.minWidth + Math.random() * (tier.maxWidth - tier.minWidth);
 
     obstacles.push({
       type: 'ground',

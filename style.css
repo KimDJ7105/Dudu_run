@@ -20,6 +20,11 @@ body {
   border: 1px solid #ccc;
 }
 
+/* 밤 모드: 300점마다 전환, 배경만 검은색으로 (다른 요소는 아직 그대로) */
+#game.night {
+  background: #000000;
+}
+
 #dudu-sprite {
   position: absolute;
   top: 0;

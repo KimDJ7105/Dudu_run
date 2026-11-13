@@ -12,15 +12,25 @@ const RUN_SPRITES = [
   'resource/sprite/Dudu/Dudu_run_2.gif',
   'resource/sprite/Dudu/Dudu_run_3.gif',
 ];
+// 밤 버전 스프라이트. 번호가 RUN_SPRITES와 1:1로 대응하도록 맞춰져 있어서, 낮/밤이 바뀔 때
+// "같은 번호"의 반대 버전으로만 바꿔야 한다 (다른 번호로 랜덤하게 바뀌면 안 됨).
+const NIGHT_RUN_SPRITES = [
+  'resource/sprite/Dudu/Dudu_night_run_1.gif',
+  'resource/sprite/Dudu/Dudu_night_run_2.gif',
+  'resource/sprite/Dudu/Dudu_night_run_3.gif',
+];
 const DUDU_SPRITE_HEIGHT = 120; // 화면에 보여줄 스프라이트 높이 (히트박스보다 크게 잡아 더 잘 보이게)
 // 화면상 두두 이미지의 가로 중심(고정값). 히트박스 가로 위치/크기와 일부러 분리해뒀다.
 // (히트박스를 꼬리 쪽만 잘라내도 화면에 보이는 두두가 덩달아 움직이지 않도록 하기 위함)
 const DUDU_VISUAL_CENTER_X = 95;
 
-// 게임 시작할 때마다 러닝 스프라이트 중 하나를 골라 그 판이 끝날 때까지 고정해서 쓴다.
+let selectedDuduSpriteIndex = 0; // 이번 판에서 고른 러닝 스프라이트 번호 (낮/밤 전환 시에도 유지)
+
+// 게임 시작할 때마다 러닝 스프라이트 중 하나를 골라 그 판이 끝날 때까지 번호를 고정해서 쓴다.
+// (낮/밤은 이 번호 안에서 RUN_SPRITES ↔ NIGHT_RUN_SPRITES만 바뀐다)
 function pickRandomDuduSprite() {
-  const src = RUN_SPRITES[Math.floor(Math.random() * RUN_SPRITES.length)];
-  duduSpriteEl.src = src;
+  selectedDuduSpriteIndex = Math.floor(Math.random() * RUN_SPRITES.length);
+  duduSpriteEl.src = RUN_SPRITES[selectedDuduSpriteIndex];
 }
 
 // 두두의 히트박스(x, y, width, height) 기준으로 스프라이트 위치를 맞춘다.
@@ -170,6 +180,28 @@ const state = {
 // 화면에 보이는 점수(state.score를 10으로 나눈 값)를 구하는 헬퍼
 function getDisplayScore() {
   return Math.floor(state.score / 10);
+}
+
+// ====== 낮/밤 전환 ======
+// 화면 점수(getDisplayScore) 300점마다 낮<->밤이 바뀐다. state.score는 화면 점수의 10배라
+// 원점수 기준으로는 3000마다 바뀌는 셈이다.
+const NIGHT_MODE_TOGGLE_SCORE = 3000;
+let isNightMode = false;
+
+function isScoreInNightRange(score) {
+  return Math.floor(score / NIGHT_MODE_TOGGLE_SCORE) % 2 === 1;
+}
+
+// 지금까지 쌓인 점수 기준으로 낮/밤 상태가 바뀌어야 하면 배경/두두 스프라이트를 전환한다.
+// (매 프레임 무조건 src를 다시 대입하면 GIF가 계속 처음부터 재생돼서, 실제로 상태가
+// 바뀐 순간에만 바꾼다)
+function updateNightMode() {
+  const shouldBeNight = isScoreInNightRange(state.score);
+  if (shouldBeNight === isNightMode) return;
+
+  isNightMode = shouldBeNight;
+  canvas.classList.toggle('night', isNightMode);
+  duduSpriteEl.src = (isNightMode ? NIGHT_RUN_SPRITES : RUN_SPRITES)[selectedDuduSpriteIndex];
 }
 
 // 최고 점수는 브라우저에 저장해뒀다가 다음에 다시 들어와도 유지되게 한다.
@@ -561,6 +593,8 @@ function startGame() {
   state.score = 0;
   state.gameSpeed = INITIAL_GAME_SPEED;
   pickRandomDuduSprite();
+  isNightMode = false;
+  canvas.classList.remove('night'); // 게임은 항상 낮으로 시작
   // 오디오 컨텍스트는 브라우저 정책상 사용자 입력(키/클릭) 시점에 깨워둬야 나중에 소리가 제대로 난다
   getAudioContext().resume();
   obstacles = [];
@@ -706,6 +740,7 @@ function gameLoop(timestamp) {
     updateClouds(deltaFactor);
     groundScrollX += state.gameSpeed * deltaFactor;
     updateScore(deltaFactor);
+    updateNightMode();
 
     if (checkCollisions()) {
       endGame();

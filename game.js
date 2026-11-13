@@ -229,7 +229,7 @@ function getDisplayScore() {
 // ====== 낮/밤 전환 ======
 // 화면 점수(getDisplayScore) 300점마다 낮<->밤이 바뀐다. state.score는 화면 점수의 10배라
 // 원점수 기준으로는 3000마다 바뀌는 셈이다.
-const NIGHT_MODE_TOGGLE_SCORE = 3000;
+const NIGHT_MODE_TOGGLE_SCORE = 500; // 테스트용으로 50점(표시 점수)마다 전환되게 임시로 낮춤
 let isNightMode = false;
 
 // nightProgress: 0=완전히 낮, 1=완전히 밤. 상태가 바뀌어도 바로 0/1로 점프하지 않고,

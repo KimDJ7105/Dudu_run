@@ -16,16 +16,12 @@ body {
 
 #game {
   display: block; /* 인라인 요소 기본 여백 제거 -> 캔버스 내부 좌표와 래퍼 좌표를 1:1로 맞추기 위함 */
-  background: #ffffff;
+  background: #ffffff; /* 실제 배경은 매 프레임 캔버스에 직접 그려서(낮/밤 색 보간) 덮어씀. 이건 첫 로딩 전 기본값 */
   border: 1px solid #ccc;
 }
 
-/* 밤 모드: 300점마다 전환, 배경만 검은색으로 (다른 요소는 아직 그대로) */
-#game.night {
-  background: #000000;
-}
-
-#dudu-sprite {
+#dudu-sprite,
+#dudu-sprite-night {
   position: absolute;
   top: 0;
   left: 0;

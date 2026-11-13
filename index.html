@@ -4,18 +4,19 @@
   <meta charset="UTF-8">
   <title>두두런 (Dudu Run)</title>
   <!-- style.css/game.js 수정할 때마다 ?v= 숫자를 올려야 브라우저 캐시 때문에 옛날 파일이 계속 보이는 걸 막을 수 있음 -->
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
   <div id="game-wrap">
     <canvas id="game" width="800" height="320"></canvas>
     <img id="dudu-sprite" alt="">
+    <img id="dudu-sprite-night" alt="">
     <div id="mobile-controls">
       <button id="btn-duck" aria-label="숙이기">▼</button>
       <button id="btn-jump" aria-label="점프">▲</button>
     </div>
     <p id="hint">스페이스바 / ↑ / W : 점프 (오래 누를수록 높이) · ↓ / S : 숙이기 · 스페이스바로 시작/재시작 (모바일은 화면 하단 버튼 사용)</p>
   </div>
-  <script src="game.js?v=5"></script>
+  <script src="game.js?v=6"></script>
 </body>
 </html>

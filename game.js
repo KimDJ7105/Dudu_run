@@ -6,7 +6,10 @@ const gameWrapEl = document.getElementById('game-wrap'); // 캔버스+두두 이
 // ====== 두두 스프라이트(실제 그림) ======
 // 캔버스 안에서 drawImage로 그리는 대신, 캔버스 위에 <img>를 겹쳐놓고 좌표만 매 프레임 맞춰준다.
 // (GIF는 캔버스에 그리면 특정 프레임을 골라 그릴 수 없어서, 브라우저가 자체 재생하는 <img> 그대로 사용)
+// 낮/밤 버전을 동시에 각자 <img>로 띄워두고, 투명도를 교차시켜서(크로스페이드)
+// 전환을 부드럽게 만든다. 둘 다 같은 좌표/변형을 쓰고 opacity만 다르게 간다.
 const duduSpriteEl = document.getElementById('dudu-sprite');
+const duduNightSpriteEl = document.getElementById('dudu-sprite-night');
 const RUN_SPRITES = [
   'resource/sprite/Dudu/Dudu_run_1.gif',
   'resource/sprite/Dudu/Dudu_run_2.gif',
@@ -27,23 +30,31 @@ const DUDU_VISUAL_CENTER_X = 95;
 let selectedDuduSpriteIndex = 0; // 이번 판에서 고른 러닝 스프라이트 번호 (낮/밤 전환 시에도 유지)
 
 // 게임 시작할 때마다 러닝 스프라이트 중 하나를 골라 그 판이 끝날 때까지 번호를 고정해서 쓴다.
-// (낮/밤은 이 번호 안에서 RUN_SPRITES ↔ NIGHT_RUN_SPRITES만 바뀐다)
+// 낮/밤 버전 둘 다 같은 번호로 미리 로드해둔다 (실제로 어느 쪽이 보이는지는 opacity로 결정).
 function pickRandomDuduSprite() {
   selectedDuduSpriteIndex = Math.floor(Math.random() * RUN_SPRITES.length);
   duduSpriteEl.src = RUN_SPRITES[selectedDuduSpriteIndex];
+  duduNightSpriteEl.src = NIGHT_RUN_SPRITES[selectedDuduSpriteIndex];
 }
 
 // 두두의 히트박스(x, y, width, height) 기준으로 스프라이트 위치를 맞춘다.
 // 발 위치(히트박스 하단)에 스프라이트 하단을 맞추고 가로 중앙 정렬, 숙이기는 CSS scaleY로 표현.
+// 낮/밤 두 이미지를 같은 자리에 겹쳐두고 opacity만 nightProgress로 교차시킨다.
 function syncDuduSprite() {
   const bottom = dudu.y + dudu.height;
-  duduSpriteEl.style.height = `${DUDU_SPRITE_HEIGHT}px`;
-  duduSpriteEl.style.top = `${bottom - DUDU_SPRITE_HEIGHT}px`;
-  duduSpriteEl.style.left = `${DUDU_VISUAL_CENTER_X}px`;
-  // scaleX(-1)로 좌우 반전해서 진행 방향(오른쪽)을 보고 달리게 한다.
-  duduSpriteEl.style.transform = dudu.isDucking
+  const transform = dudu.isDucking
     ? 'translateX(-50%) scaleX(-1) scaleY(0.6)'
     : 'translateX(-50%) scaleX(-1)';
+
+  [duduSpriteEl, duduNightSpriteEl].forEach((el) => {
+    el.style.height = `${DUDU_SPRITE_HEIGHT}px`;
+    el.style.top = `${bottom - DUDU_SPRITE_HEIGHT}px`;
+    el.style.left = `${DUDU_VISUAL_CENTER_X}px`;
+    el.style.transform = transform;
+  });
+
+  duduSpriteEl.style.opacity = 1 - nightProgress;
+  duduNightSpriteEl.style.opacity = nightProgress;
 }
 
 // 두두가 프로젝트의 메인 캐릭터라 원본 공룡 게임보다 전체적으로 크게 잡은 크기값들
@@ -101,8 +112,41 @@ function drawCloud({ x, y, scale }) {
   ctx.fill();
 }
 
+// 밤에는 구름 대신 선으로만 그린(속이 비지 않은) 야광색 별을 띄운다.
+// 구름과 같은 위치/움직임 데이터(clouds 배열)를 그대로 재사용하고, 그리는 모양만 바꾼다.
+function drawGlowStar({ x, y, scale }) {
+  const outerRadius = 10 * scale;
+  const innerRadius = outerRadius * 0.5;
+  const spikes = 5;
+  const step = Math.PI / spikes;
+  let angle = -Math.PI / 2;
+
+  ctx.beginPath();
+  ctx.moveTo(x + Math.cos(angle) * outerRadius, y + Math.sin(angle) * outerRadius);
+  for (let i = 0; i < spikes; i++) {
+    angle += step;
+    ctx.lineTo(x + Math.cos(angle) * innerRadius, y + Math.sin(angle) * innerRadius);
+    angle += step;
+    ctx.lineTo(x + Math.cos(angle) * outerRadius, y + Math.sin(angle) * outerRadius);
+  }
+  ctx.closePath();
+
+  ctx.strokeStyle = `rgb(${NIGHT_GLOW_COLOR.r}, ${NIGHT_GLOW_COLOR.g}, ${NIGHT_GLOW_COLOR.b})`;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+// 낮(구름)과 밤(별)을 nightProgress 비율로 겹쳐 그려서 전환 중엔 자연스럽게 섞여 보이게 한다.
 function drawClouds() {
-  clouds.forEach(drawCloud);
+  if (nightProgress < 1) {
+    ctx.globalAlpha = 1 - nightProgress;
+    clouds.forEach(drawCloud);
+  }
+  if (nightProgress > 0) {
+    ctx.globalAlpha = nightProgress;
+    clouds.forEach(drawGlowStar);
+  }
+  ctx.globalAlpha = 1;
 }
 // 이전 값(중력 1.3)은 "천장을 안 뚫는 것"만 기준으로 방어적으로 올렸던 값이라 점프가 너무
 // 급하게 뜨고 떨어진다는 피드백이 있었다. 중력/초기 속도를 함께 낮춰서 "같은 높이라도 더 오래
@@ -188,20 +232,46 @@ function getDisplayScore() {
 const NIGHT_MODE_TOGGLE_SCORE = 3000;
 let isNightMode = false;
 
+// nightProgress: 0=완전히 낮, 1=완전히 밤. 상태가 바뀌어도 바로 0/1로 점프하지 않고,
+// NIGHT_TRANSITION_DURATION_FRAMES에 걸쳐 서서히 움직여서 배경/장애물 색, 두두 스프라이트
+// 교차 페이드가 전부 같은 값을 기준으로 부드럽게 전환되게 한다.
+let nightProgress = 0;
+const NIGHT_TRANSITION_DURATION_FRAMES = 90; // 약 1.5초
+
 function isScoreInNightRange(score) {
   return Math.floor(score / NIGHT_MODE_TOGGLE_SCORE) % 2 === 1;
 }
 
-// 지금까지 쌓인 점수 기준으로 낮/밤 상태가 바뀌어야 하면 배경/두두 스프라이트를 전환한다.
-// (매 프레임 무조건 src를 다시 대입하면 GIF가 계속 처음부터 재생돼서, 실제로 상태가
-// 바뀐 순간에만 바꾼다)
+// 지금까지 쌓인 점수 기준으로 낮/밤 목표 상태만 갱신한다 (실제 전환은 updateNightTransition이 처리)
 function updateNightMode() {
-  const shouldBeNight = isScoreInNightRange(state.score);
-  if (shouldBeNight === isNightMode) return;
+  isNightMode = isScoreInNightRange(state.score);
+}
 
-  isNightMode = shouldBeNight;
-  canvas.classList.toggle('night', isNightMode);
-  duduSpriteEl.src = (isNightMode ? NIGHT_RUN_SPRITES : RUN_SPRITES)[selectedDuduSpriteIndex];
+// nightProgress를 목표값(0 또는 1)으로 매 프레임 조금씩 이동시킨다.
+function updateNightTransition(deltaFactor) {
+  const target = isNightMode ? 1 : 0;
+  const step = deltaFactor / NIGHT_TRANSITION_DURATION_FRAMES;
+
+  if (nightProgress < target) nightProgress = Math.min(target, nightProgress + step);
+  else if (nightProgress > target) nightProgress = Math.max(target, nightProgress - step);
+}
+
+// 0~1 사이 t로 두 rgb 색을 섞는다 (배경/장애물 색을 낮 색상 <-> 밤 색상으로 부드럽게 전환할 때 사용)
+function lerpColor(a, b, t) {
+  const r = Math.round(a.r + (b.r - a.r) * t);
+  const g = Math.round(a.g + (b.g - a.g) * t);
+  const bl = Math.round(a.b + (b.b - a.b) * t);
+  return `rgb(${r}, ${g}, ${bl})`;
+}
+
+const DAY_BACKGROUND_COLOR = { r: 255, g: 255, b: 255 };
+const NIGHT_BACKGROUND_COLOR = { r: 16, g: 22, b: 41 }; // 다크 네이비
+// 두두 야광 스프라이트에서 추출한 색(연한 민트빛 네온 그린)
+const NIGHT_GLOW_COLOR = { r: 106, g: 254, b: 203 };
+
+function drawBackground() {
+  ctx.fillStyle = lerpColor(DAY_BACKGROUND_COLOR, NIGHT_BACKGROUND_COLOR, nightProgress);
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
 // 최고 점수는 브라우저에 저장해뒀다가 다음에 다시 들어와도 유지되게 한다.
@@ -353,10 +423,13 @@ function updateObstacles(deltaFactor) {
   obstacles = obstacles.filter((obstacle) => obstacle.x + obstacle.width > 0);
 }
 
-// 점프로 피하는 장애물: 기둥(몸통) + 좌우 팔 두 개로 이루어진 선인장 실루엣 (회색 원톤)
+const CACTUS_DAY_COLOR = { r: 90, g: 90, b: 90 }; // #5a5a5a
+
+// 점프로 피하는 장애물: 기둥(몸통) + 좌우 팔 두 개로 이루어진 선인장 실루엣.
+// 낮엔 회색, 밤엔 야광색으로 nightProgress에 따라 부드럽게 섞인다.
 // 선인장 하나를 주어진 영역(x, y, width, height) 안에 그린다.
 function drawSingleCactus(x, y, width, height) {
-  ctx.fillStyle = '#5a5a5a';
+  ctx.fillStyle = lerpColor(CACTUS_DAY_COLOR, NIGHT_GLOW_COLOR, nightProgress);
 
   const trunkWidth = width * 0.42;
   const trunkX = x + (width - trunkWidth) / 2;
@@ -401,12 +474,24 @@ function drawCactus({ x, y, width, height }) {
 // 숙여서 피하는 장애물: 날갯짓하는 새(이미지 2프레임을 번갈아 그림).
 // frameCount(델타타임 기준으로 흐르는 "프레임 시간")를 WING_FLAP_INTERVAL_FRAMES로 나눠서
 // 일정 주기로 두 프레임을 번갈아 보여준다. 회전/둥실거림/꼬리 같은 연출은 넣지 않고 담백하게 그린다.
+const BIRD_DAY_COLOR = { r: 74, g: 74, b: 74 }; // 새 PNG 원본 실루엣 색(#4a4a4a)
+
 function drawBird({ x, y, width, height }) {
   const isWingUp = Math.floor(frameCount / WING_FLAP_INTERVAL_FRAMES) % 2 === 0;
   const image = isWingUp ? birdWingUpImage : birdWingDownImage;
 
-  if (image.complete) {
-    ctx.drawImage(image, x, y, width, height);
+  if (!image.complete) return;
+
+  ctx.drawImage(image, x, y, width, height);
+
+  // 새 이미지는 미리 그려둔 PNG라 색을 직접 못 바꾸므로, 그려진 영역 위에
+  // 'source-atop'으로 덧칠해서 실루엣 전체를 낮/밤 색으로 물들인다.
+  if (nightProgress > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.fillStyle = lerpColor(BIRD_DAY_COLOR, NIGHT_GLOW_COLOR, nightProgress);
+    ctx.fillRect(x, y, width, height);
+    ctx.restore();
   }
 }
 
@@ -594,7 +679,7 @@ function startGame() {
   state.gameSpeed = INITIAL_GAME_SPEED;
   pickRandomDuduSprite();
   isNightMode = false;
-  canvas.classList.remove('night'); // 게임은 항상 낮으로 시작
+  nightProgress = 0; // 게임은 항상 낮으로 시작
   // 오디오 컨텍스트는 브라우저 정책상 사용자 입력(키/클릭) 시점에 깨워둬야 나중에 소리가 제대로 난다
   getAudioContext().resume();
   obstacles = [];
@@ -730,6 +815,11 @@ function gameLoop(timestamp) {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  // 낮/밤 전환 진행도는 게임 상태와 무관하게 항상 목표값을 향해 부드럽게 움직이게 한다
+  // (게임오버 등으로 멈춰도 전환 중이던 페이드가 끊기지 않고 끝까지 진행됨)
+  updateNightTransition(deltaFactor);
+
+  drawBackground();
   drawClouds();
   drawGround();
 

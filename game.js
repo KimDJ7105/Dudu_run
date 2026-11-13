@@ -476,23 +476,34 @@ function drawCactus({ x, y, width, height }) {
 // 일정 주기로 두 프레임을 번갈아 보여준다. 회전/둥실거림/꼬리 같은 연출은 넣지 않고 담백하게 그린다.
 const BIRD_DAY_COLOR = { r: 74, g: 74, b: 74 }; // 새 PNG 원본 실루엣 색(#4a4a4a)
 
+// 'source-atop' 덧칠은 "지금까지 캔버스에 그려진 내용의 알파"를 기준으로 삼는데, 메인 캔버스는
+// drawBackground()가 매 프레임 전체를 불투명하게 채워버려서 새 모양이 아니라 사각형 전체가
+// 칠해지는 문제가 있었다. 그래서 새 크기만한 별도의 투명 캔버스에서 먼저 덧칠을 끝내고,
+// 그 결과만 메인 캔버스에 그린다 (메인 캔버스의 기존 내용과는 무관하게 처리됨).
+const birdTintCanvas = document.createElement('canvas');
+birdTintCanvas.width = FLYING_OBSTACLE_WIDTH;
+birdTintCanvas.height = FLYING_OBSTACLE_HEIGHT;
+const birdTintCtx = birdTintCanvas.getContext('2d');
+
 function drawBird({ x, y, width, height }) {
   const isWingUp = Math.floor(frameCount / WING_FLAP_INTERVAL_FRAMES) % 2 === 0;
   const image = isWingUp ? birdWingUpImage : birdWingDownImage;
 
   if (!image.complete) return;
 
-  ctx.drawImage(image, x, y, width, height);
-
-  // 새 이미지는 미리 그려둔 PNG라 색을 직접 못 바꾸므로, 그려진 영역 위에
-  // 'source-atop'으로 덧칠해서 실루엣 전체를 낮/밤 색으로 물들인다.
-  if (nightProgress > 0) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'source-atop';
-    ctx.fillStyle = lerpColor(BIRD_DAY_COLOR, NIGHT_GLOW_COLOR, nightProgress);
-    ctx.fillRect(x, y, width, height);
-    ctx.restore();
+  if (nightProgress <= 0) {
+    ctx.drawImage(image, x, y, width, height);
+    return;
   }
+
+  birdTintCtx.clearRect(0, 0, birdTintCanvas.width, birdTintCanvas.height);
+  birdTintCtx.drawImage(image, 0, 0, birdTintCanvas.width, birdTintCanvas.height);
+  birdTintCtx.globalCompositeOperation = 'source-atop';
+  birdTintCtx.fillStyle = lerpColor(BIRD_DAY_COLOR, NIGHT_GLOW_COLOR, nightProgress);
+  birdTintCtx.fillRect(0, 0, birdTintCanvas.width, birdTintCanvas.height);
+  birdTintCtx.globalCompositeOperation = 'source-over'; // 다음에 또 쓰므로 기본값으로 되돌려둠
+
+  ctx.drawImage(birdTintCanvas, x, y, width, height);
 }
 
 function drawObstacles() {
@@ -658,9 +669,12 @@ function updateScore(deltaFactor) {
   }
 }
 
+const TEXT_DAY_COLOR = { r: 51, g: 51, b: 51 }; // #333
+const TEXT_NIGHT_COLOR = { r: 255, g: 255, b: 255 }; // 밤엔 흰색으로 바꿔서 어두운 배경에서도 잘 보이게
+
 function drawScore() {
   const displayScore = getDisplayScore();
-  ctx.fillStyle = '#333';
+  ctx.fillStyle = lerpColor(TEXT_DAY_COLOR, TEXT_NIGHT_COLOR, nightProgress);
   ctx.font = '16px sans-serif';
   ctx.textAlign = 'right';
   ctx.fillText(
@@ -728,7 +742,7 @@ function drawGameOverFlash(deltaFactor) {
 }
 
 function drawMessage(text) {
-  ctx.fillStyle = '#333';
+  ctx.fillStyle = lerpColor(TEXT_DAY_COLOR, TEXT_NIGHT_COLOR, nightProgress);
   ctx.font = '20px sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText(text, canvas.width / 2, canvas.height / 2);

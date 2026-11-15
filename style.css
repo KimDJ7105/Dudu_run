@@ -29,6 +29,15 @@ body {
   pointer-events: none; /* 클릭/마우스 입력이 아래 캔버스로 그대로 전달되도록 */
 }
 
+/* DOM 순서상 두두 이미지보다 뒤에 있어서 그 위에 그려짐. 배경은 투명하고,
+   착지 먼지처럼 "캐릭터보다 앞에 보여야 하는" 연출만 여기 그린다. */
+#effects {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
 /* 게임 오버 순간 캔버스+두두 이미지를 함께 짧게 흔드는 효과 */
 #game-wrap.shake {
   animation: shake 0.4s;

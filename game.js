@@ -3,6 +3,12 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const gameWrapEl = document.getElementById('game-wrap'); // 캔버스+두두 이미지를 함께 흔들 때 사용
 
+// 두두 이미지(<img>)는 DOM상 메인 캔버스보다 위에 있어서, 메인 캔버스 안에서는 아무리 그리는
+// 순서를 바꿔도 그 이미지보다 위로 올라올 수 없다. "캐릭터보다 앞에 보여야 하는" 연출(착지
+// 먼지 등)은 이 별도의 투명 캔버스(DOM상 이미지보다도 위)에 그린다.
+const effectsCanvas = document.getElementById('effects');
+const effectsCtx = effectsCanvas.getContext('2d');
+
 // ====== 두두 스프라이트(실제 그림) ======
 // 캔버스 안에서 drawImage로 그리는 대신, 캔버스 위에 <img>를 겹쳐놓고 좌표만 매 프레임 맞춰준다.
 // (GIF는 캔버스에 그리면 특정 프레임을 골라 그릴 수 없어서, 브라우저가 자체 재생하는 <img> 그대로 사용)
@@ -685,12 +691,13 @@ function updateDustParticles(deltaFactor) {
 }
 
 function drawDustParticles() {
+  effectsCtx.clearRect(0, 0, effectsCanvas.width, effectsCanvas.height);
   dustParticles.forEach((p) => {
     const alpha = Math.max(0, p.life / DUST_PARTICLE_LIFETIME_FRAMES) * 0.5;
-    ctx.fillStyle = `rgba(150, 140, 120, ${alpha})`;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-    ctx.fill();
+    effectsCtx.fillStyle = `rgba(150, 140, 120, ${alpha})`;
+    effectsCtx.beginPath();
+    effectsCtx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+    effectsCtx.fill();
   });
 }
 
@@ -748,9 +755,12 @@ function playGameOverSound() {
 // deltaFactor 때문에 점수가 정수가 아니라 소수 단위로 올라갈 수 있어서, "정확히 나누어떨어지는지"
 // (% === 0) 대신 "이번 프레임에 그 경계를 넘었는지"로 판정한다 (넘는 순간 한 번만 실행됨).
 // 이번 판 시작 시점의 최고 점수. 그걸 이번 판에서 처음 넘는 순간 hasNewHighScore가 true가 되고,
-// HI 텍스트가 깜빡이기 시작한다 (startGame에서 둘 다 초기화됨).
+// 그 뒤로는 HI 자리에 (고정된 옛 기록 대신) 지금 점수를 그대로 보여줘서 실시간으로 올라가는
+// 것처럼 보이게 한다. 깜빡임 자체는 "방금 신기록!"을 알리는 용도로 짧게만 보여준다.
 let highScoreAtRunStart = 0;
 let hasNewHighScore = false;
+let highScoreBlinkFramesLeft = 0;
+const HIGH_SCORE_BLINK_DURATION_FRAMES = 45; // 약 0.75초 동안만 깜빡이고 이후엔 계속 켜둠
 
 function updateScore(deltaFactor) {
   const previousScore = state.score;
@@ -758,6 +768,9 @@ function updateScore(deltaFactor) {
 
   if (!hasNewHighScore && getDisplayScore() > highScoreAtRunStart) {
     hasNewHighScore = true;
+    highScoreBlinkFramesLeft = HIGH_SCORE_BLINK_DURATION_FRAMES;
+  } else if (highScoreBlinkFramesLeft > 0) {
+    highScoreBlinkFramesLeft = Math.max(0, highScoreBlinkFramesLeft - deltaFactor);
   }
 
   if (Math.floor(state.score / SCORE_SOUND_INTERVAL) > Math.floor(previousScore / SCORE_SOUND_INTERVAL)) {
@@ -780,8 +793,11 @@ const HI_BLINK_INTERVAL_FRAMES = 15; // 신기록 갱신 후 HI 텍스트가 깜
 
 function drawScore() {
   const displayScore = getDisplayScore();
+  // 신기록을 넘긴 뒤에는 HI 자리에 고정된 옛 기록 대신 지금 점수를 보여줘서 실시간으로
+  // 올라가는 것처럼 보이게 한다 (어차피 지금 점수가 곧 새 최고 기록이기도 하다)
+  const hiValue = hasNewHighScore ? displayScore : highScore;
   const scoreText = `SCORE ${String(displayScore).padStart(5, '0')}`;
-  const hiText = `HI ${String(highScore).padStart(5, '0')}`;
+  const hiText = `HI ${String(hiValue).padStart(5, '0')}`;
   const gap = '   ';
 
   ctx.fillStyle = lerpColor(TEXT_DAY_COLOR, TEXT_NIGHT_COLOR, nightProgress);
@@ -789,8 +805,9 @@ function drawScore() {
   ctx.textAlign = 'right';
   ctx.fillText(scoreText, canvas.width - 20, 30);
 
-  // 이번 판에서 신기록을 넘긴 뒤로는 HI 텍스트를 깜빡여서 "방금 신기록!"을 알려준다
-  const hiVisible = !hasNewHighScore || Math.floor(frameCount / HI_BLINK_INTERVAL_FRAMES) % 2 === 0;
+  // 신기록을 넘긴 직후 짧게만 깜빡여서 "방금 신기록!"을 알리고, 그 뒤로는 계속 켜둔다
+  const isBlinking = highScoreBlinkFramesLeft > 0;
+  const hiVisible = !isBlinking || Math.floor(frameCount / HI_BLINK_INTERVAL_FRAMES) % 2 === 0;
   if (hiVisible) {
     const gapAndScoreWidth = ctx.measureText(gap + scoreText).width;
     ctx.fillText(hiText, canvas.width - 20 - gapAndScoreWidth, 30);
@@ -806,6 +823,7 @@ function startGame() {
   state.gameSpeed = INITIAL_GAME_SPEED;
   highScoreAtRunStart = highScore;
   hasNewHighScore = false;
+  highScoreBlinkFramesLeft = 0;
   pickRandomDuduSprite();
   isNightMode = false;
   nightProgress = 0; // 게임은 항상 낮으로 시작

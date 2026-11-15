@@ -148,6 +148,61 @@ function drawClouds() {
   }
   ctx.globalAlpha = 1;
 }
+
+// ====== 밤하늘 유성 ======
+// 완전히 밤일 때(nightProgress가 충분히 높을 때)만, 아주 가끔 화면을 가로지르는 유성 하나가
+// 지나간다. 장애물과는 무관한 순수 배경 연출이라 충돌 판정 같은 건 없다.
+let shootingStar = null;
+let nextShootingStarFrame = 300; // 게임 시작 직후 바로 나오지 않도록 약간의 지연을 둠
+
+function maybeSpawnShootingStar() {
+  if (nightProgress < 0.8 || shootingStar || frameCount < nextShootingStarFrame) return;
+
+  shootingStar = {
+    x: Math.random() * canvas.width * 0.5,
+    y: 20 + Math.random() * 80,
+    vx: 7 + Math.random() * 3,
+    vy: 3 + Math.random() * 2,
+    life: 40,
+    maxLife: 40,
+  };
+  // 평균 15~25초에 한 번 정도 등장하도록 다음 등장 시점을 랜덤하게 멀리 잡아둔다
+  nextShootingStarFrame = frameCount + 900 + Math.random() * 600;
+}
+
+function updateShootingStar(deltaFactor) {
+  if (!shootingStar) return;
+
+  shootingStar.x += shootingStar.vx * deltaFactor;
+  shootingStar.y += shootingStar.vy * deltaFactor;
+  shootingStar.life -= deltaFactor;
+
+  if (shootingStar.life <= 0 || shootingStar.x > canvas.width) {
+    shootingStar = null;
+  }
+}
+
+function drawShootingStar() {
+  if (!shootingStar || nightProgress <= 0) return;
+
+  const alpha = Math.max(0, shootingStar.life / shootingStar.maxLife) * nightProgress;
+  const tailLength = 40;
+  const angle = Math.atan2(shootingStar.vy, shootingStar.vx);
+  const tailX = shootingStar.x - Math.cos(angle) * tailLength;
+  const tailY = shootingStar.y - Math.sin(angle) * tailLength;
+
+  const gradient = ctx.createLinearGradient(shootingStar.x, shootingStar.y, tailX, tailY);
+  gradient.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+  gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+  ctx.strokeStyle = gradient;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(shootingStar.x, shootingStar.y);
+  ctx.lineTo(tailX, tailY);
+  ctx.stroke();
+}
+
 // 이전 값(중력 1.3)은 "천장을 안 뚫는 것"만 기준으로 방어적으로 올렸던 값이라 점프가 너무
 // 급하게 뜨고 떨어진다는 피드백이 있었다. 중력/초기 속도를 함께 낮춰서 "같은 높이라도 더 오래
 // 떠 있는" 둥둥 뜨는 느낌으로 재조정했다 (탭 점프 ≈ 83px/0.6초, 꽉 누른 점프 ≈ 156px/0.87초).
@@ -315,6 +370,7 @@ const dudu = {
         this.isJumping = false;
         this.isJumpHeld = false;
         this.jumpHoldFrames = 0;
+        spawnDustParticles();
       }
     }
   },
@@ -599,6 +655,45 @@ function drawDuduShadow() {
   ctx.fill();
 }
 
+// ====== 착지 먼지 효과 ======
+// 점프 후 착지하는 순간, 발밑에서 작은 먼지 입자 몇 개가 옆으로 톡 튀었다가 사라진다.
+let dustParticles = [];
+const DUST_PARTICLE_COUNT = 5;
+const DUST_PARTICLE_LIFETIME_FRAMES = 18;
+
+function spawnDustParticles() {
+  for (let i = 0; i < DUST_PARTICLE_COUNT; i++) {
+    dustParticles.push({
+      x: DUDU_VISUAL_CENTER_X,
+      y: GROUND_Y,
+      vx: (Math.random() - 0.5) * 3, // 좌우로 랜덤하게 퍼짐
+      vy: -1 - Math.random() * 1.5, // 살짝 떠올랐다가
+      life: DUST_PARTICLE_LIFETIME_FRAMES,
+    });
+  }
+}
+
+function updateDustParticles(deltaFactor) {
+  const gravity = 0.15;
+  dustParticles.forEach((p) => {
+    p.vy += gravity * deltaFactor;
+    p.x += p.vx * deltaFactor;
+    p.y += p.vy * deltaFactor;
+    p.life -= deltaFactor;
+  });
+  dustParticles = dustParticles.filter((p) => p.life > 0);
+}
+
+function drawDustParticles() {
+  dustParticles.forEach((p) => {
+    const alpha = Math.max(0, p.life / DUST_PARTICLE_LIFETIME_FRAMES) * 0.5;
+    ctx.fillStyle = `rgba(150, 140, 120, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
 // ====== 효과음 ======
 // 음원 파일 없이, 브라우저의 Web Audio API로 짧은 "삐" 소리를 직접 합성해서 재생한다.
 let audioCtx = null;
@@ -652,9 +747,18 @@ function playGameOverSound() {
 // 매 프레임 조금씩 점수를 올리고, 일정 점수마다 게임 속도를 높여 난이도를 조절.
 // deltaFactor 때문에 점수가 정수가 아니라 소수 단위로 올라갈 수 있어서, "정확히 나누어떨어지는지"
 // (% === 0) 대신 "이번 프레임에 그 경계를 넘었는지"로 판정한다 (넘는 순간 한 번만 실행됨).
+// 이번 판 시작 시점의 최고 점수. 그걸 이번 판에서 처음 넘는 순간 hasNewHighScore가 true가 되고,
+// HI 텍스트가 깜빡이기 시작한다 (startGame에서 둘 다 초기화됨).
+let highScoreAtRunStart = 0;
+let hasNewHighScore = false;
+
 function updateScore(deltaFactor) {
   const previousScore = state.score;
   state.score += deltaFactor;
+
+  if (!hasNewHighScore && getDisplayScore() > highScoreAtRunStart) {
+    hasNewHighScore = true;
+  }
 
   if (Math.floor(state.score / SCORE_SOUND_INTERVAL) > Math.floor(previousScore / SCORE_SOUND_INTERVAL)) {
     playScoreMilestoneSound();
@@ -672,16 +776,25 @@ function updateScore(deltaFactor) {
 const TEXT_DAY_COLOR = { r: 51, g: 51, b: 51 }; // #333
 const TEXT_NIGHT_COLOR = { r: 255, g: 255, b: 255 }; // 밤엔 흰색으로 바꿔서 어두운 배경에서도 잘 보이게
 
+const HI_BLINK_INTERVAL_FRAMES = 15; // 신기록 갱신 후 HI 텍스트가 깜빡이는 주기
+
 function drawScore() {
   const displayScore = getDisplayScore();
+  const scoreText = `SCORE ${String(displayScore).padStart(5, '0')}`;
+  const hiText = `HI ${String(highScore).padStart(5, '0')}`;
+  const gap = '   ';
+
   ctx.fillStyle = lerpColor(TEXT_DAY_COLOR, TEXT_NIGHT_COLOR, nightProgress);
   ctx.font = '16px sans-serif';
   ctx.textAlign = 'right';
-  ctx.fillText(
-    `HI ${String(highScore).padStart(5, '0')}   SCORE ${String(displayScore).padStart(5, '0')}`,
-    canvas.width - 20,
-    30
-  );
+  ctx.fillText(scoreText, canvas.width - 20, 30);
+
+  // 이번 판에서 신기록을 넘긴 뒤로는 HI 텍스트를 깜빡여서 "방금 신기록!"을 알려준다
+  const hiVisible = !hasNewHighScore || Math.floor(frameCount / HI_BLINK_INTERVAL_FRAMES) % 2 === 0;
+  if (hiVisible) {
+    const gapAndScoreWidth = ctx.measureText(gap + scoreText).width;
+    ctx.fillText(hiText, canvas.width - 20 - gapAndScoreWidth, 30);
+  }
   ctx.textAlign = 'left';
 }
 
@@ -691,12 +804,17 @@ function startGame() {
   state.status = 'running';
   state.score = 0;
   state.gameSpeed = INITIAL_GAME_SPEED;
+  highScoreAtRunStart = highScore;
+  hasNewHighScore = false;
   pickRandomDuduSprite();
   isNightMode = false;
   nightProgress = 0; // 게임은 항상 낮으로 시작
   // 오디오 컨텍스트는 브라우저 정책상 사용자 입력(키/클릭) 시점에 깨워둬야 나중에 소리가 제대로 난다
   getAudioContext().resume();
   obstacles = [];
+  dustParticles = [];
+  shootingStar = null;
+  nextShootingStarFrame = 300;
   frameCount = 0;
   groundScrollX = 0;
   nextObstacleFrame = MIN_OBSTACLE_GAP_FRAMES;
@@ -835,6 +953,7 @@ function gameLoop(timestamp) {
 
   drawBackground();
   drawClouds();
+  drawShootingStar();
   drawGround();
 
   if (state.status === 'running') {
@@ -842,7 +961,10 @@ function gameLoop(timestamp) {
     dudu.update(deltaFactor);
     updateObstacles(deltaFactor);
     updateClouds(deltaFactor);
+    maybeSpawnShootingStar();
+    updateShootingStar(deltaFactor);
     groundScrollX += state.gameSpeed * deltaFactor;
+    updateDustParticles(deltaFactor);
     updateScore(deltaFactor);
     updateNightMode();
 
@@ -852,6 +974,7 @@ function gameLoop(timestamp) {
   }
 
   drawDuduShadow();
+  drawDustParticles();
   dudu.draw();
   syncDuduSprite();
   drawObstacles();
